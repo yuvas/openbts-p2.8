@@ -1,6 +1,6 @@
+/**@file SIP Call Control -- SIP IETF RFC-3261, RTP IETF RFC-3550. */
 /*
-* Copyright 2008 Free Software Foundation, Inc.
-* Copyright 2010 Kestrel Signal Processing, Inc.
+* Copyright 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 * Copyright 2011 Range Networks, Inc.
 *
 * This software is distributed under the terms of the GNU Affero Public License.
@@ -23,6 +23,8 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+
 
 
 #ifndef SIPENGINE_H
@@ -161,7 +163,7 @@ public:
 		Can throw SIPTimeout().
 		@return True on success.
 	*/
-	bool Register(Method wMethod=SIPRegister);	
+	bool Register(Method wMethod=SIPRegister, string *RAND = NULL, const char *IMSI = NULL, const char *SRES = NULL);	
 
 	/**
 		Send sip unregister and look at return msg.
@@ -171,27 +173,6 @@ public:
 	bool unregister() { return (Register(SIPUnregister)); };
 
 	//@}
-
-	
-	/**@name Messages associated with Emegency call (SOS) procedure. */
-	//@{
-
-	/**
-		Send an invite message.
-		@param rtpPort UDP port to use for speech (will use this and next port)
-		@param codec Code for codec to be used.
-		@return New SIP call state.
-	*/
-	SIPState SOSSendINVITE(short rtpPort, unsigned codec);
-
-	//SIPState SOSResendINVITE();
-
-	//SIPState SOSWaitForOK();
-
-	//SIPState SOSSendACK();
-
-	//@}
-
 
 	
 	/**@name Messages associated with MOC procedure. */

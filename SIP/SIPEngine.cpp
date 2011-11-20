@@ -202,8 +202,22 @@ void SIPEngine::user( const char * wCallID, const char * IMSI, const char *origI
 	mRemoteDomain = string(origHost);
 }
 
+string randy401(osip_message_t *msg)
+{
+	if (msg->status_code != 401) return "";
+	osip_www_authenticate_t *auth = (osip_www_authenticate_t*)osip_list_get(&msg->www_authenticates, 0);
+	if (auth == NULL) return "";
+	char *rand = osip_www_authenticate_get_nonce(auth);
+	string rands = rand ? string(rand) : "";
+	if (rands.length()!=32) {
+		LOG(WARNING) << "SIP RAND wrong length: " << rands;
+		return "";
+	}
+	return rands;
+}
 
-bool SIPEngine::Register( Method wMethod )
+
+bool SIPEngine::Register( Method wMethod , string *RAND, const char *IMSI, const char *SRES)
 {
 	LOG(INFO) << "user " << mSIPUsername << " state " << mState << " " << wMethod << " callID " << mCallID;
 
@@ -223,14 +237,16 @@ bool SIPEngine::Register( Method wMethod )
 			60*gConfig.getNum("SIP.RegistrationPeriod"),
 			mSIPPort, mSIPIP.c_str(), 
 			mProxyIP.c_str(), mMyTag.c_str(), 
-			mViaBranch.c_str(), mCallID.c_str(), mCSeq
+			mViaBranch.c_str(), mCallID.c_str(), mCSeq,
+			RAND, IMSI, SRES
 		); 
 	} else if (wMethod == SIPUnregister ) {
 		reg = sip_register( mSIPUsername.c_str(), 
 			0,
 			mSIPPort, mSIPIP.c_str(), 
 			mProxyIP.c_str(), mMyTag.c_str(), 
-			mViaBranch.c_str(), mCallID.c_str(), mCSeq
+			mViaBranch.c_str(), mCallID.c_str(), mCSeq,
+			NULL, NULL, NULL
 		);
 	} else { assert(0); }
  
@@ -247,6 +263,7 @@ bool SIPEngine::Register( Method wMethod )
 			msg = gSIPInterface.read(mCallID, gConfig.getNum("SIP.Timer.E"));
 		} catch (SIPTimeout) {
 			// send again
+			LOG(NOTICE) << "SIP REGISTER packet to " << mProxyIP << ":" << mProxyPort << " timeout; resending"; 
 			gSIPInterface.write(&mProxyAddr,reg);	
 			continue;
 		}
@@ -261,8 +278,18 @@ bool SIPEngine::Register( Method wMethod )
 			break;
 		}
 		if (status==401) {
-			LOG(INFO) << "REGISTER fail -- unauthorized";
-			break;
+			string wRAND = randy401(msg);
+			// if rand is included on 401 unauthorized, then the challenge-response game is afoot
+			if (wRAND.length() != 0 && RAND != NULL) {
+				LOG(INFO) << "REGISTER challenge RAND=" << wRAND;
+				*RAND = wRAND;
+				osip_message_free(msg);
+				osip_message_free(reg);
+				return false;
+			} else {
+				LOG(INFO) << "REGISTER fail -- unauthorized";
+				break;
+			}
 		}
 		if (status==404) {
 			LOG(INFO) << "REGISTER fail -- not found";
@@ -287,106 +314,6 @@ bool SIPEngine::Register( Method wMethod )
 
 
 
-const char* geoprivTemplate = 
-"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
- "<presence xmlns=\"urn:ietf:params:xml:ns:pidf\"\n"
-    "xmlns:gp=\"urn:ietf:params:xml:ns:pidf:geopriv10\"\n"
-    "xmlns:gml=\"urn:opengis:specification:gml:schema-xsd:feature:v3.0\"\n"
-    "entity=\"pres:%s@%s\">\n"
-  "<tuple id=\"1\">\n"
-   "<status>\n"
-    "<gp:geopriv>\n"
-     "<gp:location-info>\n"
-      "<gml:location>\n"
-       "<gml:Point gml:id=\"point1\" srsName=\"epsg:4326\">\n"
-        "<gml:coordinates>%s</gml:coordinates>\n"
-       "</gml:Point>\n"
-      "</gml:location>\n"
-     "</gp:location-info>\n"
-     "<gp:usage-rules>\n"
-      "<gp:retransmission-allowed>no</gp:retransmission-allowed>\n"
-     "</gp:usage-rules>\n"
-    "</gp:geopriv>\n"
-   "</status>\n"
-  "</tuple>\n"
- "</presence>\n";
-
-SIPState SIPEngine::SOSSendINVITE(short wRtp_port, unsigned  wCodec)
-{
-	LOG(INFO) << "user " << mSIPUsername << " state " << mState;
-	// Before start, need to add mCallID
-	gSIPInterface.addCall(mCallID);
-	
-	// Set Invite params. 
-	// new CSEQ and codec 
-	char tmp[50];
-	make_branch(tmp);
-	mViaBranch = tmp;
-	mCodec = wCodec;
-	mCSeq++;
-
-	mRemoteDomain = gConfig.getStr("Control.Emergency.Destination.Host");
-	mRemoteUsername = gConfig.getStr("Control.Emergency.Destination.User");
-
-	mRTPPort= wRtp_port;
-	
-	LOG(DEBUG) << "To: " << mRemoteUsername << "@" << mRemoteDomain;
-	LOG(DEBUG) << "From: " << mSIPUsername << "@" << mSIPIP;
-
-	osip_message_t *invite;
-	if (gConfig.defines("Control.Emergency.RFC5031")) {
-		invite = sip_invite5031(
-			mRTPPort, mSIPUsername.c_str(), 
-			mSIPPort, mSIPIP.c_str(), mProxyIP.c_str(),
-			mMyTag.c_str(), mViaBranch.c_str(), mCallID.c_str(), mCSeq, mCodec); 
-	} else {
-		invite = sip_invite(
-			mRemoteUsername.c_str(), mRTPPort, mSIPUsername.c_str(), 
-			mSIPPort, mSIPIP.c_str(), mProxyIP.c_str(), 
-			mMyTag.c_str(), mViaBranch.c_str(), mCallID.c_str(), mCSeq, mCodec); 
-	}
-
-	// Add IMS emergency call headers with osip_message_set_header.
-
-	// P-Access-Network-Info
-	// See 3GPP 24.229 7.2.
-	char cgi_3gpp[50];
-	sprintf(cgi_3gpp,"3GPP-GERAN; cgi-3gpp=%s%s%04x%04x",
-		gConfig.getStr("GSM.Identity.MCC").c_str(),gConfig.getStr("GSM.Identity.MNC").c_str(),
-		(unsigned)gConfig.getNum("GSM.Identity.LAC"),(unsigned)gConfig.getNum("GSM.Identity.CI"));
-	osip_message_set_header(invite,"P-Access-Network-Info",cgi_3gpp);
-
-	// P-Preferred-Identity
-	// See RFC-3325.
-	char pref_id[50];
-	sprintf(pref_id,"<sip:%s@%s>",
-		mSIPUsername.c_str(),
-		gConfig.getStr("Control.Emergency.GatewaySwitch").c_str());
-	osip_message_set_header(invite,"P-Preferred-Identity",pref_id);
-
-	// FIXME -- Use the subscriber registry to look up the E.164
-	// and make a second P-Preferred-Identity header.
-
-	// Add RFC-4119 geolocation XML to content area, if available.
-	if (gConfig.defines("Control.Emergency.Geolocation")) {
-		char xml[strlen(geoprivTemplate) + 100];
-		sprintf(xml,geoprivTemplate,
-			mSIPUsername.c_str(), gConfig.getStr("Control.Emergency.GatewaySwitch").c_str(),
-			gConfig.getStr("Control.Emergency.Geolocation").c_str());
-		osip_message_set_content_type(invite, strdup("application/pidf+xml"));
-		char tmp[20];
-		sprintf(tmp,"%u",strlen(xml));
-		osip_message_set_content_length(invite, strdup(tmp));
-		osip_message_set_body(invite,xml,strlen(xml));
-	}
-	
-	// Send Invite to Asterisk.
-	gSIPInterface.write(&mProxyAddr,invite);
-	saveINVITE(invite,true);
-	osip_message_free(invite);
-	mState = Starting;
-	return mState;
-};
 
 
 SIPState SIPEngine::MOCSendINVITE( const char * wCalledUsername, 
@@ -944,22 +871,35 @@ SIPState SIPEngine::MOSMSWaitForSubmit()
 {
 	LOG(INFO) << "user " << mSIPUsername << " state " << mState;
 
-	try {
-		osip_message_t * ok = gSIPInterface.read(mCallID, gConfig.getNum("SIP.Timer.A"));
-		// That should never return NULL.
+	Timeval timeout(gConfig.getNum("SIP.Timer.B"));
+	assert(mINVITE);
+	osip_message_t *ok = NULL;
+	while (!timeout.passed()) {
+		try {
+			// SIPInterface::read will throw SIPTIimeout if it times out.
+			// It should not return NULL.
+			ok = gSIPInterface.read(mCallID, gConfig.getNum("SIP.Timer.A"));
+		}
+		catch (SIPTimeout& e) {
+			LOG(NOTICE) << "SIP MESSAGE packet to " << mProxyIP << ":" << mProxyPort << " timedout; resending"; 
+			gSIPInterface.write(&mProxyAddr,mINVITE);	
+			continue;
+		}
 		assert(ok);
 		if((ok->status_code==200) || (ok->status_code==202) ) {
 			mState = Cleared;
-			LOG(INFO) << "successful";
+			LOG(INFO) << "successful SIP MESSAGE SMS submit to " << mProxyIP << ":" << mProxyPort << ": " << mINVITE;
+			break;
 		}
-		osip_message_free(ok);
+		// FIXME -- We should also be checking for 1xx responses here.
 	}
 
-	catch (SIPTimeout& e) {
-		LOG(ALERT) << "SIP MESSAGE timed out; is the SMS server " << mProxyIP << ":" << mProxyPort << " OK?"; 
-		mState = Fail;
+	if (!ok) {
+		LOG(ALERT) << "SIP MESSAGE timed out; is the smqueue server " << mProxyIP << ":" << mProxyPort << " OK?";
+		throw SIPTimeout();
 	}
 
+	osip_message_free(ok);
 	return mState;
 
 }

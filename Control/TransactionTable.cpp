@@ -128,26 +128,6 @@ TransactionEntry::TransactionEntry(
 }
 
 
-// Form for SOS transactions.
-TransactionEntry::TransactionEntry(
-	const char* proxy,
-	const L3MobileIdentity& wSubscriber,
-	GSM::LogicalChannel* wChannel,
-	const L3CMServiceType& wService,
-	unsigned wL3TI)
-	:mID(gTransactionTable.newID()),
-	mSubscriber(wSubscriber),mService(wService),
-	mL3TI(wL3TI),
-	mSIP(proxy,mSubscriber.digits()),
-	mGSMState(GSM::MOCInitiated),
-	mNumSQLTries(2*gConfig.getNum("Control.NumSQLTries")),
-	mChannel(wChannel),
-	mTerminationRequested(false)
-{
-	mMessage.assign(""); //mMessage[0]='\0';
-	initTimers();
-}
-
 
 // Form for MO-SMS transactions.
 TransactionEntry::TransactionEntry(
@@ -358,14 +338,6 @@ SIP::SIPState TransactionEntry::MOCSendACK()
 {
 	ScopedLock lock(mLock);
 	SIP::SIPState state = mSIP.MOCSendACK();
-	echoSIPState(state);
-	return state;
-}
-
-SIP::SIPState TransactionEntry::SOSSendINVITE(short rtpPort, unsigned codec)
-{
-	ScopedLock lock(mLock);
-	SIP::SIPState state = mSIP.SOSSendINVITE(rtpPort,codec);
 	echoSIPState(state);
 	return state;
 }
@@ -751,25 +723,6 @@ size_t TransactionTable::dump(ostream& os) const
 	return mTable.size();
 }
 
-
-TransactionEntry* TransactionTable::findLongestCall()
-{
-	ScopedLock lock(mLock);
-	clearDeadEntries();
-	long longTime = 0;
-	TransactionMap::iterator longCall = mTable.end();
-	for (TransactionMap::iterator itr = mTable.begin(); itr!=mTable.end(); ++itr) {
-		if (!(itr->second->channel())) continue;
-		if (itr->second->GSMState() != GSM::Active) continue;
-		long runTime = itr->second->stateAge();
-		if (runTime > longTime) {
-			runTime = longTime;
-			longCall = itr;
-		}
-	}
-	if (longCall == mTable.end()) return NULL;
-	return longCall->second;
-}
 
 
 

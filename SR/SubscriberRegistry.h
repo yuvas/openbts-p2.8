@@ -1,6 +1,6 @@
 /*
 * Copyright 2011 Kestrel Signal Processing, Inc.
-* Copyright 2011 Free Software Foundation, Inc.
+* Copyright 2011 Range Networks, Inc.
 *
 * This software is distributed under the terms of the GNU Affero Public License.
 * See the COPYING file in the main directory for details.
@@ -114,7 +114,12 @@ class SubscriberRegistry {
 	char *mapCLIDGlobal(const char *local);
 
 
-	bool useGateway(const char* ISDN);
+
+	void stringToUint(string strRAND, uint64_t *hRAND, uint64_t *lRAND);
+
+	string uintToString(uint64_t h, uint64_t l);
+
+	string uintToString(uint32_t x);
 
 
 	private:
@@ -127,6 +132,7 @@ class SubscriberRegistry {
 		@param resultptr Set this to point to the result of executing the statements.
 	*/
 	Status sqlLocal(const char *stmt, char **resultptr);
+
 
 
 
@@ -146,11 +152,6 @@ class SubscriberRegistry {
 		@param stmt The update statement.
 	*/
 	Status sqlUpdate(const char *stmt);
-
-
-
-
-
 
 
 

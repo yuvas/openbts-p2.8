@@ -25,6 +25,7 @@
 */
 
 
+
 #include <Timeval.h>
 
 #include "ControlCommon.h"
@@ -133,7 +134,6 @@ bool sendWelcomeMessage(const char* messageName, const char* shortCodeName, cons
 }
 
 
-
 class RRLPServer
 {
 	public:
@@ -166,13 +166,8 @@ RRLPServer::RRLPServer(L3MobileIdentity wMobileID, LogicalChannel *wDCCH)
 	DCCH = wDCCH;
 	// name of subscriber
 	name = string("IMSI") + mobileID.digits();
-	// don't continue if IMSI has a RRLP support flag and it's false
-	unsigned int supported = 0;
-	if (sqlite3_single_lookup(gSubscriberRegistry.db(), "sip_buddies", "name", name.c_str(),
-							"RRLPSupported", supported) && !supported) {
-		LOG(INFO) << "RRLP not supported for " << name;
-		trouble = true;
-	}
+	// Here's where we used to flag trouble if the RRLPSupported flag was not set,
+	// but we ignore that now, as per ticket 302.
 }
 
 bool RRLPServer::assist()
@@ -352,8 +347,9 @@ bool RRLPServer::transact()
 			switch (cause) {
 				case 97:
 					LOG(INFO) << "MS says: message not implemented";
-					// flag unsupported in SR so we don't waste time on it again
+					// flag unsupported in SR
 					os2 << "update sip_buddies set RRLPSupported = \"0\" where name = \"" << name << "\"";
+					LOG(INFO) << os2.str();
 					if (!sqlite3_command(gSubscriberRegistry.db(), os2.str().c_str())) {
 						LOG(INFO) << "sqlite3_command problem";
 					}
@@ -418,14 +414,16 @@ void Control::LocationUpdatingController(const L3LocationUpdatingRequest* lur, L
 	// even if we don't actually assign it.
 	unsigned newTMSI = 0;
 	if (!preexistingTMSI) newTMSI = gTMSITable.assign(IMSI,lur);
+	string name = "IMSI" + string(IMSI);
 
 	// Try to register the IMSI.
 	// This will be set true if registration succeeded in the SIP world.
 	bool success = false;
+	string RAND;
 	try {
 		SIPEngine engine(gConfig.getStr("SIP.Proxy.Registration").c_str(),IMSI);
 		LOG(DEBUG) << "waiting for registration of " << IMSI << " on " << gConfig.getStr("SIP.Proxy.Registration");
-		success = engine.Register(SIPEngine::SIPRegister); 
+		success = engine.Register(SIPEngine::SIPRegister, &RAND); 
 	}
 	catch(SIPTimeout) {
 		LOG(ALERT) "SIP registration timed out.  Is the proxy running at " << gConfig.getStr("SIP.Proxy.Registration");
@@ -437,6 +435,53 @@ void Control::LocationUpdatingController(const L3LocationUpdatingRequest* lur, L
 		// Release the channel and return.
 		DCCH->send(L3ChannelRelease());
 		return;
+	}
+
+	// Did we get a RAND for challenge-response?
+	if (RAND.length() != 0) {
+		// Get the mobile's SRES.
+		LOG(INFO) << "sending " << RAND << " to mobile";
+		uint64_t uRAND;
+		uint64_t lRAND;
+		gSubscriberRegistry.stringToUint(RAND, &uRAND, &lRAND);
+		DCCH->send(L3AuthenticationRequest(0,L3RAND(uRAND,lRAND)));
+		L3Message* msg = getMessage(DCCH);
+		L3AuthenticationResponse *resp = dynamic_cast<L3AuthenticationResponse*>(msg);
+		if (!resp) {
+			if (msg) {
+				LOG(WARNING) << "Unexpected message " << *msg;
+				delete msg;
+			}
+			// FIXME -- We should differentiate between wrong message and no message at all.
+			throw UnexpectedMessage();
+		}
+		LOG(INFO) << *resp;
+		uint32_t mobileSRES = resp->SRES().value();
+		delete msg;
+		// verify SRES 
+		try {
+			SIPEngine engine(gConfig.getStr("SIP.Proxy.Registration").c_str(),IMSI);
+			LOG(DEBUG) << "waiting for authentication of " << IMSI << " on " << gConfig.getStr("SIP.Proxy.Registration");
+			ostringstream os;
+			os << hex << mobileSRES;
+			string SRESstr = os.str();
+			success = engine.Register(SIPEngine::SIPRegister, &RAND, IMSI, SRESstr.c_str()); 
+			if (!success) {
+				DCCH->send(L3AuthenticationReject());
+				DCCH->send(L3ChannelRelease());
+			}
+		}
+		catch(SIPTimeout) {
+			LOG(ALERT) "SIP authentication timed out.  Is the proxy running at " << gConfig.getStr("SIP.Proxy.Registration");
+			// Reject with a "network failure" cause code, 0x11.
+			DCCH->send(L3LocationUpdatingReject(0x11));
+			// HACK -- wait long enough for a response
+			// FIXME -- Why are we doing this?
+			sleep(4);
+			// Release the channel and return.
+			DCCH->send(L3ChannelRelease());
+			return;
+		}
 	}
 
 	if (gConfig.defines("Control.LUR.QueryRRLP")) {
@@ -452,7 +497,11 @@ void Control::LocationUpdatingController(const L3LocationUpdatingRequest* lur, L
 	}
 
 	// This allows us to configure Open Registration
-	bool openRegistration = gConfig.defines("Control.LUR.OpenRegistration");
+	bool openRegistration = false;
+	if (gConfig.defines("Control.LUR.OpenRegistration")) {
+		Regexp rxp(gConfig.getStr("Control.LUR.OpenRegistration").c_str());
+		openRegistration = rxp.match(IMSI);
+	}
 
 	// Query for IMEI?
 	if (IMSIAttach && gConfig.defines("Control.LUR.QueryIMEI")) {
@@ -545,6 +594,8 @@ void Control::LocationUpdatingController(const L3LocationUpdatingRequest* lur, L
 			sendWelcomeMessage( "Control.LUR.OpenRegistration.Message",
 				"Control.LUR.OpenRegistration.ShortCode", IMSI, DCCH);
 		}
+		// set unix time of most recent registration
+		gSubscriberRegistry.setRegTime(name.c_str());
 	}
 
 	// Release the channel and return.

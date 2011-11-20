@@ -112,13 +112,6 @@ class TransactionEntry {
 		unsigned wL3TI,
 		const GSM::L3CalledPartyBCDNumber& wCalled);
 
-	/** This form is used for SOS calls, setting mGSMState to MOCInitiated. */
-	TransactionEntry(const char* proxy,
-		const GSM::L3MobileIdentity& wSubscriber,
-		GSM::LogicalChannel* wChannel,
-		const GSM::L3CMServiceType& wService,
-		unsigned wL3TI);
-
 	/** Form for MO-SMS; sets yet-unknown TI to 7 and GSM state to SMSSubmitting */
 	TransactionEntry(const char* proxy,
 		const GSM::L3MobileIdentity& wSubscriber,
@@ -182,13 +175,6 @@ class TransactionEntry {
 	SIP::SIPState MOCWaitForOK();
 	SIP::SIPState MOCSendACK();
 	void MOCInitRTP() { ScopedLock lock(mLock); return mSIP.MOCInitRTP(); }
-
-	SIP::SIPState SOSSendINVITE(short rtpPort, unsigned codec);
-	SIP::SIPState SOSResendINVITE() { return MOCResendINVITE(); }
-	SIP::SIPState SOSWaitForOK() { return MOCWaitForOK(); }
-	SIP::SIPState SOSSendACK() { return MOCSendACK(); }
-	void SOSInitRTP() { MOCInitRTP(); }
-
 
 	SIP::SIPState MTCSendTrying();
 	SIP::SIPState MTCSendRinging();
@@ -325,12 +311,6 @@ class TransactionTable {
 		@return NULL if ID is not found or was dead
 	*/
 	TransactionEntry* find(unsigned wID);
-
-	/**
-		Find the longest-running non-SOS call.
-		@return NULL if there are no calls or if all are SOS.
-	*/
-	TransactionEntry* findLongestCall();
 
 	/**
 		Remove an entry from the table and from gSIPMessageMap.
