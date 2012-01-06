@@ -37,6 +37,7 @@ libcommon_la_SOURCES = \
 
 noinst_PROGRAMS = \
 	BitVectorTest \
+	ViterbiTest \
 	InterthreadTest \
 	SocketsTest \
 	TimevalTest \
@@ -62,6 +63,10 @@ noinst_HEADERS = \
 
 BitVectorTest_SOURCES = BitVectorTest.cpp
 BitVectorTest_LDADD = libcommon.la
+
+ViterbiTest_SOURCES = ViterbiTest.cpp
+ViterbiTest_LDADD = libcommon.la
+ViterbiTest_LDFLAGS = -lrt
 
 InterthreadTest_SOURCES = InterthreadTest.cpp
 InterthreadTest_LDADD = libcommon.la
