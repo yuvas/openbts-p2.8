@@ -767,7 +767,7 @@ bool uhd_device::recv_async_msg()
 	// Assume that any error requires resynchronization
 	if (metadata.event_code != uhd::async_metadata_t::EVENT_CODE_BURST_ACK) {
 		aligned = false;
-		LOG(ERR) << str_code(metadata);
+		LOG(ALERT) << str_code(metadata);
 	}
 
 	return true;
