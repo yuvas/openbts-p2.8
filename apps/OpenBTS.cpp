@@ -113,6 +113,7 @@ pid_t gTransceiverPid = 0;
 
 void startTransceiver()
 {
+#if 0
 	// Start the transceiver binary, if the path is defined.
 	// If the path is not defined, the transceiver must be started by some other process.
 	char TRXnumARFCN[4];
@@ -131,6 +132,7 @@ void startTransceiver()
 		LOG(EMERG) << "Transceiver quit with status " << status << ". Exiting.";
 		exit(2);
 	}
+#endif
 }
 
 
