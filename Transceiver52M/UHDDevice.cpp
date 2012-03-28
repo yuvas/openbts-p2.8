@@ -686,6 +686,8 @@ int uhd_device::readSamples(short *buf, int len, bool *overrun,
 int uhd_device::writeSamples(short *buf, int len, bool *underrun,
 			unsigned long long timestamp,bool isControl)
 {
+	return len;
+
 	uhd::tx_metadata_t metadata;
 	metadata.has_time_spec = true;
 	metadata.start_of_burst = false;
