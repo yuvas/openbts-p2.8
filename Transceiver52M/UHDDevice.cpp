@@ -152,7 +152,7 @@ public:
 	bool open();
 	bool start();
 	bool stop();
-	void restart(uhd::time_spec_t ts);
+	void restart();
 	void setPriority();
 	enum busType getBus() { return bus; }
 
@@ -513,19 +513,10 @@ bool uhd_device::flush_recv(size_t num_pkts)
 	return true;
 }
 
-void uhd_device::restart(uhd::time_spec_t ts)
+void uhd_device::restart()
 {
-	uhd::stream_cmd_t cmd = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
-	usrp_dev->issue_stream_cmd(cmd);
-
-	flush_recv(50);
-
-	usrp_dev->set_time_now(ts);
-	aligned = false;
-
-	cmd = uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS;
-	cmd.stream_now = true;
-	usrp_dev->issue_stream_cmd(cmd);
+	uhd::stream_args_t stream_args("sc16");
+	tx_stream = usrp_dev->get_tx_stream(stream_args);
 }
 
 bool uhd_device::start()
@@ -542,8 +533,12 @@ bool uhd_device::start()
 	// Start asynchronous event (underrun check) loop
 	async_event_thrd.start((void * (*)(void*))async_event_loop, (void*)this);
 
-	// Start streaming
-	restart(uhd::time_spec_t(0.0));
+	usrp_dev->set_time_now(uhd::time_spec_t(0.0));
+	aligned = false;
+
+	uhd::stream_cmd_t cmd = uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS;
+	cmd.stream_now = true;
+	usrp_dev->issue_stream_cmd(cmd);
 
 	// Display usrp time
 	double time_now = usrp_dev->get_time_now().get_real_secs();
@@ -732,8 +727,8 @@ int uhd_device::writeSamples(short *buf, int len, bool *underrun,
 		LOG(ALERT) << "UHD: Device send timed out with " << pkt_time;
 		LOG(ALERT) << "UHD: Device time is " << dev_time;
 		LOG(ALERT) << "UHD: Version " << uhd::get_version_string();
-		LOG(ALERT) << "UHD: Unrecoverable error, exiting...";
-		exit(-1);
+		LOG(ALERT) << "UHD: Restarting tx streamer";
+		restart();
 	}
 
 	return num_smpls;
