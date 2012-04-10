@@ -572,14 +572,13 @@ void uhd_device::setPriority()
 
 int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
 {
-	uhd::time_spec_t ts;
+	uhd::time_spec_t curr_ts, dev_ts;
 
 	if (!num_smpls) {
 		LOG(ERR) << str_code(md);
 
 		switch (md.error_code) {
 		case uhd::rx_metadata_t::ERROR_CODE_TIMEOUT:
-			LOG(ALERT) << "UHD: Receive timed out";
 			return ERROR_UNRECOVERABLE;
 		case uhd::rx_metadata_t::ERROR_CODE_OVERFLOW:
 		case uhd::rx_metadata_t::ERROR_CODE_LATE_COMMAND:
@@ -596,16 +595,19 @@ int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
 		return ERROR_UNRECOVERABLE;
 	}
 
-	ts = md.time_spec;
+	curr_ts = md.time_spec;
 
 	// Monotonicity check
-	if (ts < prev_ts) {
+	if (curr_ts < prev_ts) {
+		dev_ts = usrp_dev->get_time_now();
+
 		LOG(ALERT) << "UHD: Loss of monotonic time";
-		LOG(ALERT) << "Current time: " << ts.get_real_secs() << ", " 
-			   << "Previous time: " << prev_ts.get_real_secs();
+		LOG(ALERT) << "UHD: Current time: " << curr_ts.get_real_secs() << ", " 
+			   << "UHD: Previous time: " << prev_ts.get_real_secs();
+		LOG(ALERT) << "UHD: Device time " << dev_ts.get_real_secs();
 		return ERROR_TIMING;
 	} else {
-		prev_ts = ts;
+		prev_ts = curr_ts;
 	}
 
 	return 0;
@@ -724,7 +726,11 @@ int uhd_device::writeSamples(short *buf, int len, bool *underrun,
 	size_t num_smpls = tx_stream->send(buf, len, metadata);
 
 	if (num_smpls != (unsigned) len) {
-		LOG(ALERT) << "UHD: Device send timed out";
+		double pkt_time = metadata.time_spec.get_real_secs();
+		double dev_time = usrp_dev->get_time_now().get_real_secs();
+
+		LOG(ALERT) << "UHD: Device send timed out with " << pkt_time;
+		LOG(ALERT) << "UHD: Device time is " << dev_time;
 		LOG(ALERT) << "UHD: Version " << uhd::get_version_string();
 		LOG(ALERT) << "UHD: Unrecoverable error, exiting...";
 		exit(-1);
