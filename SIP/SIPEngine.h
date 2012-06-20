@@ -335,6 +335,11 @@ public:
 	bool sendINFOAndWaitForOK(unsigned wInfo);
 
 	//@}
+        
+        /**
+		A way to deliver Measurement Results  04.08 10.5.2.20
+	*/
+	void sendINFO(const char * wInfo);
 
 
 	/** Save a copy of an INVITE or MESSAGE message in the engine. */
