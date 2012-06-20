@@ -530,6 +530,12 @@ bool TransactionEntry::sendINFOAndWaitForOK(unsigned info)
 	return mSIP.sendINFOAndWaitForOK(info);
 }
 
+void TransactionEntry::sendINFO(const char * measurements)
+{
+	ScopedLock lock(mLock);
+	mSIP.sendINFO(measurements);
+}
+
 void TransactionEntry::SIPUser(const char* IMSI)
 {
 	ScopedLock lock(mLock);
@@ -688,7 +694,7 @@ TransactionEntry* TransactionTable::find(const GSM::LogicalChannel *chan)
 	for (TransactionMap::iterator itr = mTable.begin(); itr!=mTable.end(); ++itr) {
 		const GSM::LogicalChannel* thisChan = itr->second->channel();
 		//LOG(DEBUG) << "looking for " << *chan << " (" << chan << ")" << ", found " << *(thisChan) << " (" << thisChan << ")";
-		if ((void*)thisChan == (void*)chan) return itr->second;
+		if( strcmp(thisChan->descriptiveString(),chan->descriptiveString()) == 0 ) return itr->second;
 	}
 	//LOG(DEBUG) << "no match for " << *chan << " (" << chan << ")";
 	return NULL;

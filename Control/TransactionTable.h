@@ -221,6 +221,8 @@ class TransactionEntry {
 	SIP::SIPState MTSMSSendOK();
 
 	bool sendINFOAndWaitForOK(unsigned info);
+	
+	void sendINFO(const char * measurements);
 
 	void txFrame(unsigned char* frame) { return mSIP.txFrame(frame); }
 	int rxFrame(unsigned char* frame) { return mSIP.rxFrame(frame); }
