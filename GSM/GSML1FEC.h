@@ -326,6 +326,8 @@ class L1Decoder {
 	void countGoodFrame();
 
 	void countBadFrame();
+	
+	bool decodeRACHBurst(const RxBurst&, Parity &wParity, BitVector &wU, BitVector &wD, unsigned &value);
 };
 
 
@@ -772,6 +774,10 @@ class TCHFACCHL1Decoder : public XCCHL1Decoder {
 
 	VocoderFrame mVFrame;				///< unpacking buffer for vocoder frame
 	unsigned char mPrevGoodFrame[33];	///< previous good frame.
+
+	Parity mParityHA;				///< parity for decoding Handover Access
+	BitVector mUHA;					///< u[] for decoding Handover Access
+	BitVector mDHA;					///< d[] for decoding Handover Access
 
 	Parity mTCHParity;
 
