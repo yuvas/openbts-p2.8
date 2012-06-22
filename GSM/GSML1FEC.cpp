@@ -1097,7 +1097,9 @@ bool TCHFACCHL1Decoder::processBurst( const RxBurst& inBurst)
 			OBJLOG(INFO) <<"Some Handover Access Detected at "<< TN() <<", HandoverReference=" << HR <<"\n";
 			if(HR == gTRX.ARFCN()->getHandoverReference( TN() )){
 				OBJLOG(INFO) <<"Handover Reference ok.. " << HR << "\n";
-				
+		
+		
+	//	error: ‘class GSM::GSMConfig’ has no member named ‘getTCHByTN’
 				GSM::TCHFACCHLogicalChannel * facch = gBTS.getTCHByTN(TN());
 				OBJLOG(INFO) << "FACCH for " << facch->channelDescription();
 				int initialTA = (int)(inBurst.timingError() + 0.5F);
